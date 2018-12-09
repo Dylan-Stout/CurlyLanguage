@@ -36,7 +36,7 @@
   (nullV) ;; null value
   (numV [n : Number])
   (objV [class-name : Symbol]
-        [field-values : (Listof Value)]))
+        [field-values : (Listof (Boxof Value))])) ;; this is now a listof boxof value for imperative assignment
 
 (module+ test
   (print-only-errors #t))
@@ -50,11 +50,25 @@
          (error 'find (string-append "not found: " (symbol->string name)))]
         [(cons p rst-l)
          (if (symbol=? (fst p) name)
-             (snd  p) ;; do we unbox here? i dont think so
-             (find rst-l name))]))
+             (snd  p) 
+             (find rst-l name))])) 
+
+;;----------------------------------------
+;; Helper to create an ordered list of box of values from a list of values - to add boxes as field values
+(define (val-list-to-box-list [lv : (Listof Value)] [bl : (Listof (Boxof Value))]) : (Listof (Boxof Value))
+  (type-case (Listof Value) lv
+    [empty (reverse bl)] ;; base case - done with last value return the listof boxof value - but reverse it first so it is in right order
+    [(cons f-lv r-lv) (val-list-to-box-list r-lv (cons (box f-lv) bl))])) ; cons the box of first value onto passed empty list
 
 
+;;----------------------------------------
+;; Helper to create an ordered list of values from a list of box of values - to reverse the conversion of box as field values
 
+(define (box-list-to-val-list [bl : (Listof (Boxof Value))] [lv : (Listof Value)]) : (Listof Value)
+  (type-case (Listof (Boxof Value)) bl
+    [empty (reverse lv)]
+    [(cons f-bl r-bl) (box-list-to-val-list r-bl (cons (unbox f-bl) lv))]))
+                             
 
 (module+ test
   (test (find (list (values 'a 1)) 'a)
@@ -84,30 +98,35 @@
                             (recur els))] ;; else 
         [(newE class-name field-exprs)
          (local [(define c (find classes class-name))
-                 (define vals (map recur field-exprs))]
+                 (define vals (map recur field-exprs))] 
            (if (= (length vals) (length (classC-field-names c)))
-               (objV class-name vals)
+               (objV class-name (val-list-to-box-list vals empty)) ;; when creating the objects, box up the interpreted values in a sequential list
                (error 'interp "wrong field count")))]
         [(getE obj-expr field-name)
          (type-case Value (recur obj-expr)
            [(objV class-name field-vals)
             (type-case Class (find classes class-name)
               [(classC field-names methods)
-               (find (map2 (lambda (n v) (values n v))
+               (find (map2 (lambda (n v) (values n v)) ;; in a list of tuples ('name * value) get the value associated withe given field name
                            field-names
-                           field-vals)
+                           (box-list-to-val-list field-vals empty)) ;; convert the list of boxes associate with this objects field vals to just a list of values so we can find it and return it
                      field-name)])]
            [else (error 'interp "not an object")])]
-        [(setE expr field-name typ)
-         (type-case Value (recur expr)
-           [(objV class-name field-vals)
-            (type-case Class (find classes class-name)
-              [(classC field-names methods)
-               (find (map2 (lambda (n v) (values n v))
-                           field-names
-                           field-vals)
-                     field-name)])]
-           [else (error 'interp "not an object")])]
+        [(setE o-expr field-name n-expr)
+         (local [(define obj (recur o-expr))
+                 (define n-epxr-v (recur n-expr)) ]
+           (type-case Value (recur o-expr) ;; let's make sure o-expr is an object first
+             [(objV class-name field-vals) ;; its an object with a symbol name and field-vals->(listof (boxof value))
+              (type-case Class (find classes class-name) ;; find the class in class definitions so we can get its' field names
+                [(classC field-names methods)
+                 (begin ;; we aren't going to be creating a new object, we will want to set existing box
+                   (set-box! (find (map2 (lambda (n v) (values n v)) ;; find the box associated with this field name, and set it to a new value
+                                       field-names
+                                       field-vals)
+                                 field-name)
+                            n-epxr-v) ;; recur on interp to get value of the n-expr to set as new box's value
+                    n-epxr-v)])] ;; we are returning the evaluated n-expr value that was just set, since we can't return void
+             [else (error 'interp "not an object")]))]
         [(sendE obj-expr method-name arg-expr)
          (local [(define obj (recur obj-expr))
                  (define arg-val (recur arg-expr))]
@@ -181,7 +200,7 @@
                    (values 'addX
                            (plusE (getE (thisE) 'x) (argE)))
                    (values 'multY (multE (argE) (getE (thisE) 'y)))
-                   (values 'factory12 (newE 'Posn (list (numE 1) (numE 2))))))))
+                   (values 'factory12 (newE 'Posn (list (numE 1) (numE 2)))))))) 
     
   (define posn3D-class
     (values 'Posn3D
@@ -211,7 +230,7 @@
         (numV 70))
 
   (test (interp-posn (newE 'Posn (list (numE 2) (numE 7))))
-        (objV 'Posn (list (numV 2) (numV 7))))
+        (objV 'Posn (list (box (numV 2)) (box (numV 7)))))
 
   (test (interp-posn (sendE posn27 'mdist (numE 0)))
         (numV 9))

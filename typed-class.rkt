@@ -153,6 +153,18 @@
                                     class-name
                                     t-classes))]
            [else (type-error obj-expr "object")])]
+        [(setI obj-expr field-name n-exp)
+         (type-case Type (recur obj-expr)
+           [(objT class-name)
+            (if (symbol=? class-name 'null) ;; make sure the object-expr is not null
+                (error 'typcheck-expr "null object") ;; it was null
+                (cond
+                  [(is-subtype? (recur n-exp) ;; we have to typecheck the field-name and n-exp so we can determine that the n-exp is sub type of named field
+                                (find-field-in-tree field-name class-name t-classes)
+                                t-classes) 
+                   (typecheck n-exp t-classes)] ;; return type of the expr if valid
+                  [else (error 'typecheck-expr "unable to set: expr not subtype of field name")] ))] ;; n-exp was not a sub type of named field
+           [else (type-error obj-expr "object")])] ;; the object-expr is not an object
         [(sendI obj-expr method-name arg-expr)
          (local [(define obj-type (recur obj-expr))
                  (define arg-type (recur arg-expr))]

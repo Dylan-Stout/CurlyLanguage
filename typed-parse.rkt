@@ -106,7 +106,8 @@
                    {+ {get this x} {get this y}}]
             [addDist {[arg : posn]} : num
                      {+ {send arg mdist 0}
-                        {send this mdist 0}}]}
+                        {send this mdist 0}}]
+            }
          
          `{class Posn3D extends Posn
             {[z : num]}
@@ -115,4 +116,59 @@
                       {super mdist arg}}]})
         
         `{send {new Posn3D 5 3 1} addDist {new Posn 2 7}})
-       `18))
+       `18)
+
+  ;;-------------------- GETTER TEST -----------------------
+ (test (interp-t-prog 
+        (list
+         `{class Posn extends Object
+            {[x : num]
+             [y : num]}
+            [mdist {[arg : num]} : num
+                   {+ {get this x} {get this y}}]
+            [addDist {[arg : posn]} : num
+                     {+ {send arg mdist 0}
+                        {send this mdist 0}}]
+            [setX {[arg : num]} : num  
+                  {set this x arg}]
+            [getX {[arg : num]} : num ;; add GETTER imperative assignment tests 
+                  {get this x}]
+            }
+         
+         `{class Posn3D extends Posn
+            {[z : num]}
+            [mdist {[arg : num]} : num
+                   {+ {get this z} 
+                      {super mdist arg}}]})
+        
+        `{send {new Posn3D 5 3 1} getX 1})
+       `5)
+
+   ;;-------------------- SETTER TEST -----------------------
+ (test (interp-t-prog 
+        (list
+         `{class Posn extends Object
+            {[x : num]
+             [y : num]}
+            [mdist {[arg : num]} : num
+                   {+ {get this x} {get this y}}]
+            [addDist {[arg : posn]} : num
+                     {+ {send arg mdist 0}
+                        {send this mdist 0}}]
+            [setX {[arg : num]} : num   ;; add SETTER for imperative assignment tests 
+                  {set this x arg}]
+            [getX {[arg : num]} : num
+                  {get this x}]
+            }
+         
+         `{class Posn3D extends Posn
+            {[z : num]}
+            [mdist {[arg : num]} : num
+                   {+ {get this z} 
+                      {super mdist arg}}]})
+        
+        `{send {new Posn3D 5 3 1} setX 12})
+       `12) ;; this won't prove that we have imperative assignment with the setter but it WILL prove that the return value for the setE is working all the way through parse
+
+
+  )

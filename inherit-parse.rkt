@@ -5,7 +5,7 @@
 (module+ test
   (print-only-errors #t))
 
-;; ----------------------------------------
+;; ---------------------------------------- 
 
 (define (parse-class [s : S-Exp]) : (Symbol * ClassI)
   (cond
@@ -35,7 +35,7 @@
 (define (parse [s : S-Exp]) : ExpI
   (cond
    [(s-exp-match? `NUMBER s) (numI (s-exp->number s))]
-   [(s-exp-match? `null s) (nullI)] ;; null parse
+   [(s-exp-match? `null s) (nullI)] ;; null parse -- boring
    [(s-exp-match? `arg s) (argI)]
    [(s-exp-match? `this s) (thisI)]
    [(s-exp-match? `{+ ANY ANY} s)
@@ -50,7 +50,7 @@
    [(s-exp-match? `{get ANY SYMBOL} s)
     (getI (parse (second (s-exp->list s)))
           (s-exp->symbol (third (s-exp->list s))))]
-   [(s-exp-match? `{set ANY SYMBOL ANY} s)
+   [(s-exp-match? `{set ANY SYMBOL ANY} s) ;; SET parse -- boring
     (setI (parse (second (s-exp->list s)))
           (s-exp->symbol (third (s-exp->list s)))
           (parse (fourth (s-exp->list s))))]
@@ -58,7 +58,7 @@
     (sendI (parse (second (s-exp->list s)))
            (s-exp->symbol (third (s-exp->list s)))
            (parse (fourth (s-exp->list s))))]
-   [(s-exp-match? `{if0 ANY ANY ANY} s)
+   [(s-exp-match? `{if0 ANY ANY ANY} s) ;; if0 parse -- boring
     (if0I (parse (second (s-exp->list s)))
           (parse (third (s-exp->list s)))
           (parse (fourth (s-exp->list s))))]    
