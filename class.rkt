@@ -32,6 +32,16 @@
   (classC [field-names : (Listof Symbol)]
           [methods : (Listof (Symbol * Exp))]))
 
+;; pretty sure we need to have an environment for imperative assignment
+(define-type Binding
+  (bind [name : Symbol]
+        [val : Value]))
+
+(define-type-alias Env (Listof Binding))
+
+(define mt-env empty)
+(define extend-env cons)
+
 (define-type Value
   (nullV) ;; null value
   (numV [n : Number])
@@ -113,8 +123,7 @@
                      field-name)])]
            [else (error 'interp "not an object")])]
         [(setE o-expr field-name n-expr)
-         (local [(define obj (recur o-expr))
-                 (define n-epxr-v (recur n-expr)) ]
+         (local [(define n-epxr-v (recur n-expr)) ]
            (type-case Value (recur o-expr) ;; let's make sure o-expr is an object first
              [(objV class-name field-vals) ;; its an object with a symbol name and field-vals->(listof (boxof value))
               (type-case Class (find classes class-name) ;; find the class in class definitions so we can get its' field names
@@ -125,7 +134,7 @@
                                        field-vals)
                                  field-name)
                             n-epxr-v) ;; recur on interp to get value of the n-expr to set as new box's value
-                    n-epxr-v)])] ;; we are returning the evaluated n-expr value that was just set, since we can't return void
+                   (recur (getE o-expr field-name)))])] ;; we are returning the evaluated n-expr value that was just set, since we can't return void
              [else (error 'interp "not an object")]))]
         [(sendE obj-expr method-name arg-expr)
          (local [(define obj (recur obj-expr))
@@ -199,6 +208,8 @@
                                   (sendE (argE) 'mdist (numE 0))))
                    (values 'addX
                            (plusE (getE (thisE) 'x) (argE)))
+                   (values 'setX
+                           (setE (thisE) 'x (argE))) ;; add a setter for X for imperative test
                    (values 'multY (multE (argE) (getE (thisE) 'y)))
                    (values 'factory12 (newE 'Posn (list (numE 1) (numE 2)))))))) 
     
@@ -228,9 +239,17 @@
   (test (interp (multE (numE 10) (numE 7))
                 empty (objV 'Object empty) (numV 0))
         (numV 70))
-
+ 
   (test (interp-posn (newE 'Posn (list (numE 2) (numE 7))))
-        (objV 'Posn (list (box (numV 2)) (box (numV 7)))))
+        (objV 'Posn (list (box (numV 2)) (box (numV 7))))) ;; these are now list of box of values
+
+  (test (interp-posn (sendE posn27 'setX (numE 9))) ;; setter test, does not prove the imperative nature of field assignment
+        (numV 9))
+
+    (test (begin
+             (local [(define obj (interp-posn (sendE posn27 'setX (numE 9))))]
+              obj))
+        (objV 'Posn (list (box (numV 9)) (box (numV 7))))) 
 
   (test (interp-posn (sendE posn27 'mdist (numE 0)))
         (numV 9))
@@ -244,7 +263,7 @@
         (numV 30))
 
   (test (interp-posn (sendE posn531 'addDist posn27))
-        (numV 18))
+        (numV 18))  
   
   (test/exn (interp-posn (plusE (numE 1) posn27))
             "not a number")
@@ -256,3 +275,4 @@
             "not an object")
   (test/exn (interp-posn (newE 'Posn (list (numE 0))))
             "wrong field count"))
+(trace interp)

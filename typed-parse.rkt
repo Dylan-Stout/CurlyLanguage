@@ -168,7 +168,6 @@
                       {super mdist arg}}]})
         
         `{send {new Posn3D 5 3 1} setX 12})
-       `12) ;; this won't prove that we have imperative assignment with the setter but it WILL prove that the return value for the setE is working all the way through parse
-
+       `12) ;; this should prove that we have imperative assignment with the setter since the return value of setX will be what getX would return on the same field value
 
   )
