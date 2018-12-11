@@ -35,7 +35,7 @@
 ;; pretty sure we need to have an environment for imperative assignment
 (define-type Binding
   (bind [name : Symbol]
-        [val : Value]))
+        [val :  Value]))
 
 (define-type-alias Env (Listof Binding))
 
@@ -47,6 +47,15 @@
   (numV [n : Number])
   (objV [class-name : Symbol]
         [field-values : (Listof (Boxof Value))])) ;; this is now a listof boxof value for imperative assignment
+
+;; lookup ----------------------------------------
+(define (lookup [n : Symbol] [env : Env]) : Value
+  (type-case (Listof Binding) env
+   [empty (error 'lookup "free variable")]
+   [(cons b rst-env) (cond
+                       [(symbol=? n (bind-name b))
+                         (bind-val b)]
+                       [else (lookup n rst-env)])]))
 
 (module+ test
   (print-only-errors #t))
@@ -92,28 +101,30 @@
 
 ;; ----------------------------------------
 
-(define interp : (Exp (Listof (Symbol * Class)) Value Value -> Value)
-  (lambda (a classes this-val arg-val)
-    (local [(define (recur expr)
-              (interp expr classes this-val arg-val))]
+(define interp : (Exp (Listof (Symbol * Class)) Value Value (Listof Binding) -> Value)
+  (lambda (a classes this-val arg-val env)
+    (local [(define (recur expr env)
+              (interp expr classes this-val arg-val env))
+            (define (recur-empty expr)
+              (interp expr classes this-val arg-val mt-env))]
       (type-case Exp a
         [(nullE) (nullV)]
         [(numE n) (numV n)]
-        [(plusE l r) (num+ (recur l) (recur r))]
-        [(multE l r) (num* (recur l) (recur r))]
+        [(plusE l r) (num+ (recur l env) (recur r env))]
+        [(multE l r) (num* (recur l env) (recur r env))]
         [(thisE) this-val]
         [(argE) arg-val]
-        [(if0E tst thn els) (if (equal? (numV 0) (recur tst)) ;; determine if the test condition is == 0 
-                            (recur thn) ;; then
-                            (recur els))] ;; else 
+        [(if0E tst thn els) (if (equal? (numV 0) (recur tst env)) ;; determine if the test condition is == 0 
+                            (recur thn env) ;; then
+                            (recur els env))] ;; else 
         [(newE class-name field-exprs)
          (local [(define c (find classes class-name))
-                 (define vals (map recur field-exprs))] 
+                 (define vals (map recur-empty field-exprs))] 
            (if (= (length vals) (length (classC-field-names c)))
                (objV class-name (val-list-to-box-list vals empty)) ;; when creating the objects, box up the interpreted values in a sequential list
                (error 'interp "wrong field count")))]
         [(getE obj-expr field-name)
-         (type-case Value (recur obj-expr)
+         (type-case Value (recur obj-expr env)
            [(objV class-name field-vals)
             (type-case Class (find classes class-name)
               [(classC field-names methods)
@@ -123,42 +134,43 @@
                      field-name)])]
            [else (error 'interp "not an object")])]
         [(setE o-expr field-name n-expr)
-         (local [(define n-epxr-v (recur n-expr)) ]
-           (type-case Value (recur o-expr) ;; let's make sure o-expr is an object first
+         (local [(define n-epxr-v (recur n-expr env)) ]
+           (type-case Value (recur o-expr env) ;; let's make sure o-expr is an object first
              [(objV class-name field-vals) ;; its an object with a symbol name and field-vals->(listof (boxof value))
               (type-case Class (find classes class-name) ;; find the class in class definitions so we can get its' field names
                 [(classC field-names methods)
                  (begin ;; we aren't going to be creating a new object, we will want to set existing box
+     
                    (set-box! (find (map2 (lambda (n v) (values n v)) ;; find the box associated with this field name, and set it to a new value
                                        field-names
                                        field-vals)
                                  field-name)
                             n-epxr-v) ;; recur on interp to get value of the n-expr to set as new box's value
-                   (recur (getE o-expr field-name)))])] ;; we are returning the evaluated n-expr value that was just set, since we can't return void
+                   (recur (getE o-expr field-name) env))])] ;; we are returning the evaluated n-expr value that was just set, since we can't return void
              [else (error 'interp "not an object")]))]
         [(sendE obj-expr method-name arg-expr)
-         (local [(define obj (recur obj-expr))
-                 (define arg-val (recur arg-expr))]
+         (local [(define obj (recur obj-expr env))
+                 (define arg-val (recur arg-expr env))]
            (type-case Value obj
              [(objV class-name field-vals)
               (call-method class-name method-name classes
-                           obj arg-val)]
+                           obj arg-val env)]
              [else (error 'interp "not an object")]))]
         [(ssendE obj-expr class-name method-name arg-expr)
-         (local [(define obj (recur obj-expr))
-                 (define arg-val (recur arg-expr))]
+         (local [(define obj (recur obj-expr env))
+                 (define arg-val (recur arg-expr env))]
            (call-method class-name method-name classes
-                        obj arg-val))]))))
+                        obj arg-val env))]))))
 
 (define (call-method class-name method-name classes
-                     obj arg-val)
+                     obj arg-val env)
   (type-case Class (find classes class-name)
     [(classC field-names methods)
      (let ([body-expr (find methods method-name)])
        (interp body-expr
                classes
                obj
-               arg-val))]))
+               arg-val env))]))
 
 (define (num-op [op : (Number Number -> Number)]
                 [op-name : Symbol] 
@@ -179,7 +191,7 @@
   (test (interp (if0E (plusE (numE 0) (numE 0))
               (plusE (numE 0) (numE 1))
               (plusE (numE 2) (numE 0)))
-                empty (objV 'Object empty) (numV 0))
+                empty (objV 'Object empty) (numV 0) mt-env)
         (numV 1)))
 
 
@@ -190,7 +202,7 @@
   (test/exn (interp (if0E (plusE (nullE) (numE 0))
               (plusE (numE 0) (numE 1))
               (plusE (numE 2) (numE 0)))
-                empty (objV 'Object empty) (numV 0))
+                empty (objV 'Object empty) (numV 0)  mt-env)
         "not a number"))
  
 ;; ----------------------------------------
@@ -210,6 +222,8 @@
                            (plusE (getE (thisE) 'x) (argE)))
                    (values 'setX
                            (setE (thisE) 'x (argE))) ;; add a setter for X for imperative test
+                   (values 'getX
+                           (getE (thisE) 'x))
                    (values 'multY (multE (argE) (getE (thisE) 'y)))
                    (values 'factory12 (newE 'Posn (list (numE 1) (numE 2)))))))) 
     
@@ -225,31 +239,35 @@
   (define posn531 (newE 'Posn3D (list (numE 5) (numE 3) (numE 1))))
 
   (define (interp-posn a)
-    (interp a (list posn-class posn3D-class) (numV -1) (numV -1))))
+    (interp a (list posn-class posn3D-class) (numV -1) (numV -1) mt-env)))
 
 ;; ----------------------------------------
 
 (module+ test
   (test (interp (numE 10) 
-                empty (objV 'Object empty) (numV 0))
+                empty (objV 'Object empty) (numV 0) mt-env)
         (numV 10))
   (test (interp (plusE (numE 10) (numE 17))
-                empty (objV 'Object empty) (numV 0))
+                empty (objV 'Object empty) (numV 0) mt-env)
         (numV 27))
   (test (interp (multE (numE 10) (numE 7))
-                empty (objV 'Object empty) (numV 0))
+                empty (objV 'Object empty) (numV 0) mt-env)
         (numV 70))
  
   (test (interp-posn (newE 'Posn (list (numE 2) (numE 7))))
         (objV 'Posn (list (box (numV 2)) (box (numV 7))))) ;; these are now list of box of values
 
-  (test (interp-posn (sendE posn27 'setX (numE 9))) ;; setter test, does not prove the imperative nature of field assignment
+  (test (interp-posn (sendE posn27 'setX (numE 9))) ;; setter test, imperative nature of field assignment which returns getter value
         (numV 9))
 
-    (test (begin
-             (local [(define obj (interp-posn (sendE posn27 'setX (numE 9))))]
-              obj))
-        (objV 'Posn (list (box (numV 9)) (box (numV 7))))) 
+  (test (begin
+          (interp-posn (sendE posn27 'setX (numE 3))) ;; tests imperativeness of the setter
+          (interp-posn (sendE posn27 'getX (numE 0))))
+        (numV 3)) 
+
+    (test (interp-posn (sendE posn27 'setX (numE 9)))
+              
+        (numV 9)) 
 
   (test (interp-posn (sendE posn27 'mdist (numE 0)))
         (numV 9))
@@ -262,7 +280,7 @@
                             (numE 15)))
         (numV 30))
 
-  (test (interp-posn (sendE posn531 'addDist posn27))
+  (test (interp-posn (sendE posn531 'addDist posn27)) 
         (numV 18))  
   
   (test/exn (interp-posn (plusE (numE 1) posn27))
@@ -274,5 +292,4 @@
   (test/exn (interp-posn (ssendE (numE 1) 'Posn 'mdist (numE 0)))
             "not an object")
   (test/exn (interp-posn (newE 'Posn (list (numE 0))))
-            "wrong field count"))
-(trace interp)
+            "wrong field count")) 
