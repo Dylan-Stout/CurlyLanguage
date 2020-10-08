@@ -1,5 +1,5 @@
 # CurlyLanguage
-Programming language implementation that is imperative, object-oriented, type classed, inheritance driven using PLAIT dialect of Racket functional programming language. Makes use of curly braces in much the same way Racket or PLAIT uses parentheses.
+A new imperative, object-oriented, type classed, inheritance driven programming language using PLAIT dialect of Racket functional programming language. Makes use of curly braces in much the same way Racket or PLAIT uses parentheses.
 
 # Usage 
 interp-t-prog can serv as a main entry point; the first argument is a list of s-exp which are the class definitions, much like Java syntax of typed fields and methods encapsulated in a class. The second argument is the s-exp that will be parsed as the program. 
